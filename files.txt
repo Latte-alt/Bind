@@ -1,0 +1,9 @@
+bannermotd
+bind-local.conf
+bind-options.conf
+bind-zone-168.192.in-addr.arpa
+bind-zone-net16tech.institute
+bind.txt
+README.md
+sshd_config
+sudoers-add
