@@ -1,0 +1,13 @@
+$TTL    1D
+@       IN      SOA     net16tech.institute. root.net16tech.institute. (
+                                2025110500      ; serial
+                                12H             ; refresh
+                                1H              ; retry
+                                1W              ; expire
+                                1H              ; ncache
+                        )
+        IN      NS      net16tech.institute.
+0.1     IN      PTR     HQ-RTR.net16tech.institute
+1.1     IN      PTR     HQ-RTR.net16tech.institute
+0.2     IN      PTR     HQ-SRV.net16tech.institute
+1.2     IN      PTR     HQ-CLI.net16tech.institute

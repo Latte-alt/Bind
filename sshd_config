@@ -1,0 +1,5 @@
+Port 2216
+MaxAuthTries 1
+PasswordAuthentication yes
+Banner /etc/openssh/bannermotd
+AllowUsers	sshuser

@@ -1,0 +1,19 @@
+$TTL    1D
+@       IN      SOA     net16tech.institute. root.net16tech.institute. (
+                                2025110500      ; serial
+                                12H             ; refresh
+                                1H              ; retry
+                                1W              ; expire
+                                1H              ; ncache
+                        )
+        IN      NS      net16tech.institute.
+        IN      A       192.168.0.2
+HQ-RTR  IN      A       192.168.0.1
+HQ-RTR  IN      A       192.168.1.1
+HQ-SRV  IN      A       192.168.0.2
+
+BR-RTR  IN      A       192.168.3.1
+BR-SRV  IN      A       192.168.3.2
+HQ-CLI  IN      A       192.168.1.2
+docker  IN      A       172.16.1.1
+web     IN      A       172.16.2.2
