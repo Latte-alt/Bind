@@ -1,96 +1,135 @@
+Конфигурация по варианту №1
+Репозиторий-шаблон: github.com/latte-alt/bind
+
 ISP
 
 hostnamectl set-hostname ISP; exec bash
-mkdir /etc/net/ifaces/ens19
-mkdir /etc/net/ifaces/ens20
-echo "172.16.1.1/28" > /etc/net/ifaces/ens19/ipv4address
+
+mkdir -p /etc/net/ifaces/ens18
+echo BOOTPROTO=dhcp > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+
+mkdir -p /etc/net/ifaces/ens19
+echo 172.16.10.1/28 > /etc/net/ifaces/ens19/ipv4address
 echo BOOTPROTO=static > /etc/net/ifaces/ens19/options
 echo TYPE=eth >> /etc/net/ifaces/ens19/options
-echo 172.16.2.1/28 > /etc/net/ifaces/ens20/ipv4address
+
+mkdir -p /etc/net/ifaces/ens20
+echo 172.16.20.1/28 > /etc/net/ifaces/ens20/ipv4address
 echo BOOTPROTO=static > /etc/net/ifaces/ens20/options
 echo TYPE=eth >> /etc/net/ifaces/ens20/options
-vim /etc/net/sysctl.conf (поменять forward на 1)
+
+grep -q '^net.ipv4.ip_forward' /etc/net/sysctl.conf && sed -i 's/^net.ipv4.ip_forward.*/net.ipv4.ip_forward = 1/' /etc/net/sysctl.conf || echo 'net.ipv4.ip_forward = 1' >> /etc/net/sysctl.conf
+sysctl -w net.ipv4.ip_forward=1
 
 systemctl restart network
 
-apt-get update; apt-get install iptables; iptables -t nat -A POSTROUTING -o ens18 -j MASQUERADE; iptables-save -f /etc/sysconfig/iptables; systemctl enable --now iptables
+apt-get update
+apt-get install -y iptables tzdata
 
-apt-get install tzdata -y; timedatectl set-timezone Asia/Yekaterinburg
+iptables -t nat -A POSTROUTING -o ens18 -j MASQUERADE
+iptables-save -f /etc/sysconfig/iptables
+systemctl enable --now iptables
+
+timedatectl set-timezone Asia/Yekaterinburg
+
 
 HQ-RTR
 
 en
 conf t
-hostname hq-rtr.net16tech.institute
+hostname hq-rtr.au-team.irpo
+
+username net_admin
+password P@ssw0rd
+role admin
+activate
+exit
+
 int isp
-ip add 172.16.1.2/28
+ip add 172.16.10.2/28
 ip nat outside
-int hq.100
-ip add 192.168.0.1/26
+exit
+
+int hq.111
+ip add 192.168.111.1/27
 ip nat inside
-int hq.200
-ip add 192.168.1.1/27
+exit
+
+int hq.211
+ip add 192.168.211.1/27
 ip nat inside
-int hq.999
-ip add 192.168.2.1/28
+exit
+
+int hq.811
+ip add 192.168.81.1/29
 ip nat inside
+exit
+
 port te0
 service-instance isp
 encapsulation untagged
 connect ip int isp
-ex
+exit
+exit
+
 port te1
-service-instance hq.100
-encapsulation dot1q 100
+service-instance hq.111
+encapsulation dot1q 111
 rewrite pop 1
-con ip int hq.100
-ex
-service-instance hq.200
-encapsulation dot1q 200
+connect ip int hq.111
+exit
+service-instance hq.211
+encapsulation dot1q 211
 rewrite pop 1
-con ip int hq.200
-ex
-service-instance hq.999
-encapsulation dot1q 999
+connect ip int hq.211
+exit
+service-instance hq.811
+encapsulation dot1q 811
 rewrite pop 1
-con ip int hq.999
-ex
-ex
+connect ip int hq.811
+exit
+exit
+
 int tunnel.0
 ip mtu 1400
-ip tunnel 172.16.1.2 172.16.2.2 mode gre
+ip tunnel 172.16.10.2 172.16.20.2 mode gre
 ip address 10.0.0.1/30
-ex
+ip ospf authentication-key P@ssw0rd
+ip ospf authentication
+exit
+
 router ospf 1
 router-id 1.1.1.1
 passive-interface default
 no passive-interface tunnel.0
-network 192.168.0.0/26 area 0
-network 192.168.1.0/27 area 0
-network 192.168.2.0/28 area 0
+network 192.168.111.0/27 area 0
+network 192.168.211.0/27 area 0
+network 192.168.81.0/29 area 0
 network 10.0.0.0/30 area 0
 exit
-int tunnel.0
-ip ospf authentication-key cisco
-ip ospf authentication
+
+ip pool HQ-CLI 1
+range 192.168.211.2-192.168.211.30
 exit
-ip pool DHCP 1
-range 192.168.1.2-192.168.1.30
-exit
+
 dhcp-server 1
-pool DHCP 1
-mask 26
-gateway 192.168.1.1
-dns 192.168.0.2
-domain-search net16tech.institute
-domain-name net16tech.institute
-ex
+pool HQ-CLI 1
+mask 27
+gateway 192.168.211.1
+dns 192.168.111.2
+domain-search au-team.irpo
+domain-name au-team.irpo
 exit
-ip nat pool NAT 192.168.0.1-192.168.0.62,192.168.1.1-192.168.1.30,192.168.2.1-192.168.2.14
+
+int hq.211
+dhcp-server 1
+exit
+
+ip nat pool NAT 192.168.111.1-192.168.111.30,192.168.211.1-192.168.211.30,192.168.81.1-192.168.81.6
 ip nat source dynamic inside-to-outside pool NAT overload int isp
-ip route 0.0.0.0/0 172.16.1.1
-int hq.200
-dhcp-server 1
+
+ip route 0.0.0.0/0 172.16.10.1
 ntp timezone utc+5
 write
 
@@ -99,83 +138,105 @@ BR-RTR
 
 en
 conf t
-hostname br-rtr.net16tech.institute
+hostname br-rtr.au-team.irpo
+
+username net_admin
+password P@ssw0rd
+role admin
+activate
+exit
+
 int isp
-ip add 172.16.2.2/28
+ip add 172.16.20.2/28
 ip nat outside
+exit
+
 int br
-ip add 192.168.3.1/29
+ip add 192.168.20.1/28
 ip nat inside
+exit
+
 port te0
 service-instance isp
 encapsulation untagged
-con ip int isp
+connect ip int isp
+exit
+exit
+
 port te1
 service-instance br
 encapsulation untagged
-con ip int br
-ex
-ex
+connect ip int br
+exit
+exit
+
 int tunnel.0
 ip mtu 1400
-ip tunnel 172.16.2.2 172.16.1.2 mode gre
+ip tunnel 172.16.20.2 172.16.10.2 mode gre
 ip address 10.0.0.2/30
-ip ospf authentication-key cisco
+ip ospf authentication-key P@ssw0rd
 ip ospf authentication
 exit
+
 router ospf 1
 router-id 2.2.2.2
-network 192.168.3.0/29 area 0
-network 10.0.0.0/30 area 0
 passive-interface default
 no passive-interface tunnel.0
-ex
-ip nat pool NAT 192.168.3.1-192.168.3.6
+network 192.168.20.0/28 area 0
+network 10.0.0.0/30 area 0
+exit
+
+ip nat pool NAT 192.168.20.1-192.168.20.14
 ip nat source dynamic inside-to-outside pool NAT overload int isp
-ip route 0.0.0.0/0 172.16.2.1
+
+ip route 0.0.0.0/0 172.16.20.1
 ntp timezone utc+5
 write
 
+
 HQ-SRV
 
-hostnamectl hostname hq-srv.net16tech.institute; exec bash
-echo 192.168.0.2/27 > /etc/net/ifaces/ens18/ipv4address
+hostnamectl set-hostname hq-srv.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo 192.168.111.2/27 > /etc/net/ifaces/ens18/ipv4address
 echo BOOTPROTO=static > /etc/net/ifaces/ens18/options
 echo TYPE=eth >> /etc/net/ifaces/ens18/options
-echo "default via 192.168.0.1" > /etc/net/ifaces/ens18/ipv4route
-echo nameserver 8.8.8.8 > /etc/net/ifaces/ens18/resolv.conf
+echo "default via 192.168.111.1" > /etc/net/ifaces/ens18/ipv4route
+echo nameserver 192.168.111.2 > /etc/net/ifaces/ens18/resolv.conf
+echo search au-team.irpo >> /etc/net/ifaces/ens18/resolv.conf
+
 systemctl restart network
 
 timedatectl set-timezone Asia/Yekaterinburg
 
-useradd sshuser -u 2016
-passwd sshuser
+useradd sshuser -u 2011
+echo 'sshuser:P@ssw0rd' | chpasswd
 usermod -aG wheel sshuser
+echo 'sshuser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sshuser
+chmod 0440 /etc/sudoers.d/sshuser
 
-Добавляем строку в /etc/sudoers:
-sshuser ALL=(ALL) NOPASSWD:ALL
+apt-get update
+apt-get install -y bind bind-utils openssh-server
 
-Приводим указанные строки в файле /etc/openssh/sshd_config к следующим значениям:
-
-Port 2216
-MaxAuthTries 1
+sed -i '/^Port /d;/^#Port /d;/^MaxAuthTries /d;/^#MaxAuthTries /d;/^PasswordAuthentication /d;/^#PasswordAuthentication /d;/^Banner /d;/^#Banner /d;/^AllowUsers /d' /etc/openssh/sshd_config
+cat >> /etc/openssh/sshd_config <<'EOF'
+Port 2011
+MaxAuthTries 2
 PasswordAuthentication yes
 Banner /etc/openssh/bannermotd
-AllowUsers  sshuser     //В параметре AllowUsers вместо пробела используется Tab
+AllowUsers sshuser
+EOF
 
-Создаем файл bannermotd:
-
-----------------------
+cat > /etc/openssh/bannermotd <<'EOF'
 Authorized access only
-----------------------
+EOF
 
 systemctl restart sshd
 
-apt-get update
-apt-get install bind bind-utils -y
+mkdir -p /etc/bind/zone
 
-настроить /etc/bind/options.conf
-
+cat > /etc/bind/options.conf <<'EOF'
 options {
         version "unknown";
         directory "/etc/bind/zone";
@@ -184,186 +245,127 @@ options {
         recursing-file "/var/run/named/named.recursing";
         secroots-file "/var/run/named/named.secroots";
 
-        // disables the use of a PID file
         pid-file none;
-
-        /*
-         * Oftenly used directives are listed below.
-         */
-
-        listen-on { 192.168.0.2; };
+        listen-on { 192.168.111.2; };
         listen-on-v6 { none; };
 
-        /*
-         * If the forward directive is set to "only", the server will only
-         * query the forwarders.
-         */
-        //forward only;
-        forwarders { 8.8.8.8; };
+        forwarders { 77.88.8.7; 77.88.8.3; };
 
-        /*
-         * Specifies which hosts are allowed to ask ordinary questions.
-         */
         allow-query { any; };
-
-        /*
-         * This lets "allow-query" be used to specify the default zone access
-         * level rather than having to have every zone override the global
-         * value. "allow-query-cache" can be set at both the options and view
-         * levels.  If "allow-query-cache" is not set then "allow-recursion" is
-         * used if set, otherwise "allow-query" is used if set unless
-         * "recursion no;" is set in which case "none;" is used, otherwise the
-         * default (localhost; localnets;) is used.
-         */
-        //allow-query-cache { localnets; };
-
-        /*
-         * Specifies which hosts are allowed to make recursive queries
-         * through this server.  If not specified, the default is to allow
-         * recursive queries from all hosts.  Note that disallowing recursive
-         * queries for a host does not prevent the host from retrieving data
-         * that is already in the server's cache.
-         */
         allow-recursion { any; };
-
-        /*
-         * Sets the maximum time for which the server will cache ordinary
-         * (positive) answers.  The default is one week (7 days).
-         */
-        //max-cache-ttl 86400;
-
-        /*
-         * The server will scan the network interface list every
-         * interface-interval minutes.  The default is 60 minutes.
-         * If set to 0, interface scanning will only occur when the
-         * configuration file is loaded.  After the scan, listeners will
-         * be started on any new interfaces (provided they are allowed by
-         * the listen-on configuration).  Listeners on interfaces that
-         * have gone away will be cleaned up.
-         */
-        //interface-interval 0;
 };
 
 logging {
-        // The default_debug channel has the special property that it only
-        // produces output when the server’s debug level is non-zero. It
-        // normally writes to a file called named.run in the server’s working
-        // directory.
-
-        // For security reasons, when the -u command-line option is used, the
-        // named.run file is created only after named has changed to the new
-        // UID, and any debug output generated while named is starting - and
-        // still running as root - is discarded. To capture this output, run
-        // the server with the -L option to specify a default logfile, or the
-        // -g option to log to standard error which can be redirected to a
-        // file.
-
-        // channel default_debug {
-        //      file "/var/log/named/named.run" versions 10 size 20m;
-        //      print-time yes;
-        //      print-category yes;
-        //      print-severity yes;
-        //      severity dynamic;
-        // };
 };
+EOF
 
-
-
-настроить так файл /etc/bind/zone/net16tech.institute
-
-$TTL    1D
-@       IN      SOA     net16tech.institute. root.net16tech.institute. (
-                                2025110500      ; serial
-                                12H             ; refresh
-                                1H              ; retry
-                                1W              ; expire
-                                1H              ; ncache
-                        )
-        IN      NS      net16tech.institute.
-        IN      A       192.168.0.2
-HQ-RTR  IN      A       192.168.0.1
-HQ-RTR  IN      A       192.168.1.1
-HQ-SRV  IN      A       192.168.0.2
-
-BR-RTR  IN      A       192.168.3.1
-BR-SRV  IN      A       192.168.3.2
-HQ-CLI  IN      A       192.168.1.2
-docker  IN      A       172.16.1.1
-web     IN      A       172.16.2.2
-
-
-настроить так файл /etc/bind/zone/168.192.in-addr.arpa
-
-$TTL    1D
-@       IN      SOA     net16tech.institute. root.net16tech.institute. (
-                                2025110500      ; serial
-                                12H             ; refresh
-                                1H              ; retry
-                                1W              ; expire
-                                1H              ; ncache
-                        )
-        IN      NS      net16tech.institute.
-0.1     IN      PTR     HQ-RTR.net16tech.institute
-1.1     IN      PTR     HQ-RTR.net16tech.institute
-0.2     IN      PTR     HQ-SRV.net16tech.institute
-1.2     IN      PTR     HQ-CLI.net16tech.institute
-
-в файле /etc/bind/local.conf добавить
-
-zone "net16tech.institute" {
-type master;
-file "net16tech.institute";
+cat > /etc/bind/local.conf <<'EOF'
+zone "au-team.irpo" {
+        type master;
+        file "au-team.irpo";
 };
 
 zone "168.192.in-addr.arpa" {
-type master;
-file "168.192.in-addr.arpa";
+        type master;
+        file "168.192.in-addr.arpa";
 };
+EOF
+
+cat > /etc/bind/zone/au-team.irpo <<'EOF'
+$TTL 1D
+@       IN      SOA     au-team.irpo. root.au-team.irpo. (
+                                2026010101
+                                12H
+                                1H
+                                1W
+                                1H )
+        IN      NS      hq-srv.au-team.irpo.
+        IN      A       192.168.111.2
+
+hq-rtr  IN      A       192.168.111.1
+br-rtr  IN      A       192.168.20.1
+hq-srv  IN      A       192.168.111.2
+hq-cli  IN      A       192.168.211.2
+br-srv  IN      A       192.168.20.2
+docker  IN      A       172.16.10.1
+web     IN      A       172.16.20.1
+EOF
+
+cat > /etc/bind/zone/168.192.in-addr.arpa <<'EOF'
+$TTL 1D
+@       IN      SOA     au-team.irpo. root.au-team.irpo. (
+                                2026010101
+                                12H
+                                1H
+                                1W
+                                1H )
+        IN      NS      hq-srv.au-team.irpo.
+
+1.111   IN      PTR     hq-rtr.au-team.irpo.
+2.111   IN      PTR     hq-srv.au-team.irpo.
+2.211   IN      PTR     hq-cli.au-team.irpo.
+EOF
 
 cd /etc/bind/zone
 chmod 700 *
 chown named. *
 
-echo nameserver 192.168.0.2 > /etc/net/ifaces/ens18/resolv.conf
-echo search net16tech.institute >> /etc/net/ifaces/ens18/resolv.conf
-
+named-checkconf /etc/bind/options.conf
+named-checkconf /etc/bind/local.conf
+named-checkzone au-team.irpo /etc/bind/zone/au-team.irpo
+named-checkzone 168.192.in-addr.arpa /etc/bind/zone/168.192.in-addr.arpa
 
 systemctl enable --now bind
+systemctl restart bind
+
 
 BR-SRV
 
-hostnamectl hostname br-srv.net16tech.institute; exec bash
-echo 192.168.3.2/29 > /etc/net/ifaces/ens18/ipv4address
+hostnamectl set-hostname br-srv.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo 192.168.20.2/28 > /etc/net/ifaces/ens18/ipv4address
 echo BOOTPROTO=static > /etc/net/ifaces/ens18/options
 echo TYPE=eth >> /etc/net/ifaces/ens18/options
-echo "default via 192.168.3.1" > /etc/net/ifaces/ens18/ipv4route
-echo search net16tech.institute >> /etc/net/ifaces/ens18/resolv.conf
-echo nameserver 192.168.0.2 >> /etc/net/ifaces/ens18/resolv.conf
+echo "default via 192.168.20.1" > /etc/net/ifaces/ens18/ipv4route
+echo nameserver 192.168.111.2 > /etc/net/ifaces/ens18/resolv.conf
+echo search au-team.irpo >> /etc/net/ifaces/ens18/resolv.conf
+
 systemctl restart network
 
 timedatectl set-timezone Asia/Yekaterinburg
 
-useradd sshuser -u 2016
-passwd sshuser
+useradd sshuser -u 2011
+echo 'sshuser:P@ssw0rd' | chpasswd
 usermod -aG wheel sshuser
+echo 'sshuser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sshuser
+chmod 0440 /etc/sudoers.d/sshuser
 
-Добавляем строку в /etc/sudoers:
-sshuser ALL=(ALL) NOPASSWD:ALL
+apt-get update
+apt-get install -y openssh-server
 
-Приводим указанные строки в файле /etc/openssh/sshd_config к следующим значениям:
-
-Port 2216
-MaxAuthTries 1
+sed -i '/^Port /d;/^#Port /d;/^MaxAuthTries /d;/^#MaxAuthTries /d;/^PasswordAuthentication /d;/^#PasswordAuthentication /d;/^Banner /d;/^#Banner /d;/^AllowUsers /d' /etc/openssh/sshd_config
+cat >> /etc/openssh/sshd_config <<'EOF'
+Port 2011
+MaxAuthTries 2
 PasswordAuthentication yes
 Banner /etc/openssh/bannermotd
-AllowUsers  sshuser     //В параметре AllowUsers вместо пробела используется Tab
+AllowUsers sshuser
+EOF
 
-Создаем файл bannermotd:
-
-----------------------
+cat > /etc/openssh/bannermotd <<'EOF'
 Authorized access only
-----------------------
+EOF
 
 systemctl restart sshd
 
 
+HQ-CLI
+
+hostnamectl set-hostname hq-cli.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo BOOTPROTO=dhcp > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+
+systemctl restart network
