@@ -1,0 +1,371 @@
+Конфигурация по варианту №1
+Репозиторий-шаблон: github.com/latte-alt/bind
+
+ISP
+
+hostnamectl set-hostname ISP; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo BOOTPROTO=dhcp > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+
+mkdir -p /etc/net/ifaces/ens19
+echo 172.16.10.1/28 > /etc/net/ifaces/ens19/ipv4address
+echo BOOTPROTO=static > /etc/net/ifaces/ens19/options
+echo TYPE=eth >> /etc/net/ifaces/ens19/options
+
+mkdir -p /etc/net/ifaces/ens20
+echo 172.16.20.1/28 > /etc/net/ifaces/ens20/ipv4address
+echo BOOTPROTO=static > /etc/net/ifaces/ens20/options
+echo TYPE=eth >> /etc/net/ifaces/ens20/options
+
+grep -q '^net.ipv4.ip_forward' /etc/net/sysctl.conf && sed -i 's/^net.ipv4.ip_forward.*/net.ipv4.ip_forward = 1/' /etc/net/sysctl.conf || echo 'net.ipv4.ip_forward = 1' >> /etc/net/sysctl.conf
+sysctl -w net.ipv4.ip_forward=1
+
+systemctl restart network
+
+apt-get update
+apt-get install -y iptables tzdata
+
+iptables -t nat -A POSTROUTING -o ens18 -j MASQUERADE
+iptables-save -f /etc/sysconfig/iptables
+systemctl enable --now iptables
+
+timedatectl set-timezone Asia/Yekaterinburg
+
+
+HQ-RTR
+
+en
+conf t
+hostname hq-rtr.au-team.irpo
+
+username net_admin
+password P@ssw0rd
+role admin
+activate
+exit
+
+int isp
+ip add 172.16.10.2/28
+ip nat outside
+exit
+
+int hq.111
+ip add 192.168.111.1/27
+ip nat inside
+exit
+
+int hq.211
+ip add 192.168.211.1/27
+ip nat inside
+exit
+
+int hq.811
+ip add 192.168.81.1/29
+ip nat inside
+exit
+
+port te0
+service-instance isp
+encapsulation untagged
+connect ip int isp
+exit
+exit
+
+port te1
+service-instance hq.111
+encapsulation dot1q 111
+rewrite pop 1
+connect ip int hq.111
+exit
+service-instance hq.211
+encapsulation dot1q 211
+rewrite pop 1
+connect ip int hq.211
+exit
+service-instance hq.811
+encapsulation dot1q 811
+rewrite pop 1
+connect ip int hq.811
+exit
+exit
+
+int tunnel.0
+ip mtu 1400
+ip tunnel 172.16.10.2 172.16.20.2 mode gre
+ip address 10.0.0.1/30
+ip ospf authentication-key P@ssw0rd
+ip ospf authentication
+exit
+
+router ospf 1
+router-id 1.1.1.1
+passive-interface default
+no passive-interface tunnel.0
+network 192.168.111.0/27 area 0
+network 192.168.211.0/27 area 0
+network 192.168.81.0/29 area 0
+network 10.0.0.0/30 area 0
+exit
+
+ip pool HQ-CLI 1
+range 192.168.211.2-192.168.211.30
+exit
+
+dhcp-server 1
+pool HQ-CLI 1
+mask 27
+gateway 192.168.211.1
+dns 192.168.111.2
+domain-search au-team.irpo
+domain-name au-team.irpo
+exit
+
+int hq.211
+dhcp-server 1
+exit
+
+ip nat pool NAT 192.168.111.1-192.168.111.30,192.168.211.1-192.168.211.30,192.168.81.1-192.168.81.6
+ip nat source dynamic inside-to-outside pool NAT overload int isp
+
+ip route 0.0.0.0/0 172.16.10.1
+ntp timezone utc+5
+write
+
+
+BR-RTR
+
+en
+conf t
+hostname br-rtr.au-team.irpo
+
+username net_admin
+password P@ssw0rd
+role admin
+activate
+exit
+
+int isp
+ip add 172.16.20.2/28
+ip nat outside
+exit
+
+int br
+ip add 192.168.20.1/28
+ip nat inside
+exit
+
+port te0
+service-instance isp
+encapsulation untagged
+connect ip int isp
+exit
+exit
+
+port te1
+service-instance br
+encapsulation untagged
+connect ip int br
+exit
+exit
+
+int tunnel.0
+ip mtu 1400
+ip tunnel 172.16.20.2 172.16.10.2 mode gre
+ip address 10.0.0.2/30
+ip ospf authentication-key P@ssw0rd
+ip ospf authentication
+exit
+
+router ospf 1
+router-id 2.2.2.2
+passive-interface default
+no passive-interface tunnel.0
+network 192.168.20.0/28 area 0
+network 10.0.0.0/30 area 0
+exit
+
+ip nat pool NAT 192.168.20.1-192.168.20.14
+ip nat source dynamic inside-to-outside pool NAT overload int isp
+
+ip route 0.0.0.0/0 172.16.20.1
+ntp timezone utc+5
+write
+
+
+HQ-SRV
+
+hostnamectl set-hostname hq-srv.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo 192.168.111.2/27 > /etc/net/ifaces/ens18/ipv4address
+echo BOOTPROTO=static > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+echo "default via 192.168.111.1" > /etc/net/ifaces/ens18/ipv4route
+echo nameserver 192.168.111.2 > /etc/net/ifaces/ens18/resolv.conf
+echo search au-team.irpo >> /etc/net/ifaces/ens18/resolv.conf
+
+systemctl restart network
+
+timedatectl set-timezone Asia/Yekaterinburg
+
+useradd sshuser -u 2011
+echo 'sshuser:P@ssw0rd' | chpasswd
+usermod -aG wheel sshuser
+echo 'sshuser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sshuser
+chmod 0440 /etc/sudoers.d/sshuser
+
+apt-get update
+apt-get install -y bind bind-utils openssh-server
+
+sed -i '/^Port /d;/^#Port /d;/^MaxAuthTries /d;/^#MaxAuthTries /d;/^PasswordAuthentication /d;/^#PasswordAuthentication /d;/^Banner /d;/^#Banner /d;/^AllowUsers /d' /etc/openssh/sshd_config
+cat >> /etc/openssh/sshd_config <<'EOF'
+Port 2011
+MaxAuthTries 2
+PasswordAuthentication yes
+Banner /etc/openssh/bannermotd
+AllowUsers sshuser
+EOF
+
+cat > /etc/openssh/bannermotd <<'EOF'
+Authorized access only
+EOF
+
+systemctl restart sshd
+
+mkdir -p /etc/bind/zone
+
+cat > /etc/bind/options.conf <<'EOF'
+options {
+        version "unknown";
+        directory "/etc/bind/zone";
+        dump-file "/var/run/named/named_dump.db";
+        statistics-file "/var/run/named/named.stats";
+        recursing-file "/var/run/named/named.recursing";
+        secroots-file "/var/run/named/named.secroots";
+
+        pid-file none;
+        listen-on { 192.168.111.2; };
+        listen-on-v6 { none; };
+
+        forwarders { 77.88.8.7; 77.88.8.3; };
+
+        allow-query { any; };
+        allow-recursion { any; };
+};
+
+logging {
+};
+EOF
+
+cat > /etc/bind/local.conf <<'EOF'
+zone "au-team.irpo" {
+        type master;
+        file "au-team.irpo";
+};
+
+zone "168.192.in-addr.arpa" {
+        type master;
+        file "168.192.in-addr.arpa";
+};
+EOF
+
+cat > /etc/bind/zone/au-team.irpo <<'EOF'
+$TTL 1D
+@       IN      SOA     au-team.irpo. root.au-team.irpo. (
+                                2026010101
+                                12H
+                                1H
+                                1W
+                                1H )
+        IN      NS      hq-srv.au-team.irpo.
+        IN      A       192.168.111.2
+
+hq-rtr  IN      A       192.168.111.1
+br-rtr  IN      A       192.168.20.1
+hq-srv  IN      A       192.168.111.2
+hq-cli  IN      A       192.168.211.2
+br-srv  IN      A       192.168.20.2
+docker  IN      A       172.16.10.1
+web     IN      A       172.16.20.1
+EOF
+
+cat > /etc/bind/zone/168.192.in-addr.arpa <<'EOF'
+$TTL 1D
+@       IN      SOA     au-team.irpo. root.au-team.irpo. (
+                                2026010101
+                                12H
+                                1H
+                                1W
+                                1H )
+        IN      NS      hq-srv.au-team.irpo.
+
+1.111   IN      PTR     hq-rtr.au-team.irpo.
+2.111   IN      PTR     hq-srv.au-team.irpo.
+2.211   IN      PTR     hq-cli.au-team.irpo.
+EOF
+
+cd /etc/bind/zone
+chmod 700 *
+chown named. *
+
+named-checkconf /etc/bind/options.conf
+named-checkconf /etc/bind/local.conf
+named-checkzone au-team.irpo /etc/bind/zone/au-team.irpo
+named-checkzone 168.192.in-addr.arpa /etc/bind/zone/168.192.in-addr.arpa
+
+systemctl enable --now bind
+systemctl restart bind
+
+
+BR-SRV
+
+hostnamectl set-hostname br-srv.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo 192.168.20.2/28 > /etc/net/ifaces/ens18/ipv4address
+echo BOOTPROTO=static > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+echo "default via 192.168.20.1" > /etc/net/ifaces/ens18/ipv4route
+echo nameserver 192.168.111.2 > /etc/net/ifaces/ens18/resolv.conf
+echo search au-team.irpo >> /etc/net/ifaces/ens18/resolv.conf
+
+systemctl restart network
+
+timedatectl set-timezone Asia/Yekaterinburg
+
+useradd sshuser -u 2011
+echo 'sshuser:P@ssw0rd' | chpasswd
+usermod -aG wheel sshuser
+echo 'sshuser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sshuser
+chmod 0440 /etc/sudoers.d/sshuser
+
+apt-get update
+apt-get install -y openssh-server
+
+sed -i '/^Port /d;/^#Port /d;/^MaxAuthTries /d;/^#MaxAuthTries /d;/^PasswordAuthentication /d;/^#PasswordAuthentication /d;/^Banner /d;/^#Banner /d;/^AllowUsers /d' /etc/openssh/sshd_config
+cat >> /etc/openssh/sshd_config <<'EOF'
+Port 2011
+MaxAuthTries 2
+PasswordAuthentication yes
+Banner /etc/openssh/bannermotd
+AllowUsers sshuser
+EOF
+
+cat > /etc/openssh/bannermotd <<'EOF'
+Authorized access only
+EOF
+
+systemctl restart sshd
+
+
+HQ-CLI
+
+hostnamectl set-hostname hq-cli.au-team.irpo; exec bash
+
+mkdir -p /etc/net/ifaces/ens18
+echo BOOTPROTO=dhcp > /etc/net/ifaces/ens18/options
+echo TYPE=eth >> /etc/net/ifaces/ens18/options
+
+systemctl restart network
